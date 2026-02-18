@@ -193,3 +193,85 @@ Current implementation mocks payment for simplicity.
 - Real payment gateway integration
 
 
+---
+
+# 🧭 High-Level Architecture Diagram (Conceptual)
+
+                ┌────────────────────┐
+                │        Client       │
+                │ (Web / Mobile App) │
+                └──────────┬─────────┘
+                           │
+                           ▼
+                ┌────────────────────┐
+                │     API Gateway     │
+                │ Auth / Rate Limit   │
+                └──────────┬─────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        ▼                  ▼                  ▼
+┌────────────┐    ┌────────────┐    ┌────────────┐
+│  Movie      │    │  Booking    │    │  Theatre    │
+│  Service    │    │  Service    │    │  Service    │
+└──────┬─────┘    └──────┬─────┘    └──────┬─────┘
+│                  │                  │
+▼                  ▼                  ▼
+┌────────────────────┐
+│    Pricing Service  │
+│   (Discount Rules)  │
+└──────────┬─────────┘
+│
+▼
+┌────────────────────┐
+│      Database       │
+│   (Postgres / H2)   │
+└────────────────────┘
+
+Future Extensions:
+- Payment Service (Adapter Pattern)
+- Notification Service
+- Kafka Event Streaming
+- Redis Seat Locking
+
+---
+
+# 🔐 Seat Locking Architecture (Conceptual Design)
+
+## Problem
+In a high-concurrency booking platform, multiple users may try to book the same seat simultaneously.
+Direct database updates can lead to race conditions, double booking, or heavy locking.
+
+## Proposed Solution – Distributed Seat Locking
+
+The platform uses a soft-lock mechanism using Redis (design-level).
+
+Flow:
+
+1. User selects seats.
+2. Booking Service requests a temporary lock in Redis.
+3. Seats are locked for a short duration (e.g., 5 minutes).
+4. User completes payment.
+5. On payment success → Booking confirmed and persisted in database.
+6. On payment failure or timeout → Redis lock expires and seats become available again.
+
+Architecture:
+
+Client → Booking Service → Redis (Seat Lock) → Payment → Database
+
+Benefits:
+- Prevents double booking.
+- Reduces database contention.
+- Supports high concurrency scenarios.
+
+## Consistency Model
+
+Eventual consistency is followed:
+- Redis handles short-lived seat locks.
+- Database stores final confirmed bookings.
+
+## Alternative Approach (Trade-off)
+
+Database pessimistic locking was avoided because:
+- It reduces scalability under heavy load.
+- Long transactions impact performance.
+
